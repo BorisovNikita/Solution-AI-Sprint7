@@ -1,0 +1,49 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+LAYOUT_LEFT_RIGHT()
+title C4 Component — флагман: внутреннее устройство трёх ключевых сервисов
+
+Container_Boundary(scoring, "Scoring Service") {
+  Component(input_validator, "Input Validator", "Схема, типы, обязательные поля")
+  Component(schema_validator, "Schema Validator", "Контракт входа")
+  Component(feature_reader, "Feature Reader", "Клиент feature store; проверка свежести")
+  Component(text_encoder, "Text Encoder", "TF-IDF / эмбеддинги; без генерации")
+  Component(model_runner, "Model Runner", "LightGBM/CatBoost, ONNX; версия из реестра")
+  Component(calibrator, "Calibrator", "Platt / Isotonic")
+  Component(reason_codes, "Reason Code Builder", "Топ-признаки, SHAP")
+  Component(output_validator, "Output Validator", "Диапазон score, обязательные поля")
+  Component(fallback_checker, "Fallback Checker", "Признаки фолбэка (см. §7)")
+}
+
+Container_Boundary(rules, "Rules & Guardrails") {
+  Component(podft_rules, "ПОД/ФТ Rules", "Детерминированные пороги, обязательные проверки")
+  Component(thresholds, "Threshold / Guardrails", "Лимиты, запреты, SLA")
+  Component(conflict_checker, "Conflict Checker", "Расхождение score с сигналом правила")
+  Component(escalation, "Escalation Decider", "Человек / правило / резервный путь")
+}
+
+Container_Boundary(prior, "Prioritization Service") {
+  Component(rank_builder, "Rank Builder", "Скор + правила + флаги")
+  Component(capacity, "Capacity Limiter", "K = 10 тыс./мес (пропускная способность)")
+  Component(queue_writer, "Queue Writer", "Запись в очередь финмониторинга")
+  Component(audit_logger, "Audit Logger", "Версия модели, feature_snapshot_id, решение")
+}
+
+Rel(input_validator, schema_validator, "Валидный вход")
+Rel(schema_validator, feature_reader, "Контракт пройден")
+Rel(feature_reader, text_encoder, "Признаки + текст")
+Rel(text_encoder, model_runner, "Вектор")
+Rel(model_runner, calibrator, "Сырой скор")
+Rel(calibrator, reason_codes, "Калиброванный скор")
+Rel(reason_codes, output_validator, "Результат")
+Rel(output_validator, fallback_checker, "Проверенный выход")
+Rel(fallback_checker, podft_rules, "Кейс / фолбэк")
+Rel(podft_rules, thresholds, "Флаги правил")
+Rel(thresholds, conflict_checker, "Согласованность")
+Rel(conflict_checker, escalation, "Маршрут")
+Rel(escalation, rank_builder, "Маршрут + флаги")
+Rel(rank_builder, capacity, "Ранг")
+Rel(capacity, queue_writer, "Топ-K")
+Rel(queue_writer, audit_logger, "Запись решения")
+
+@enduml

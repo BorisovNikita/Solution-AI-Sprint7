@@ -1,0 +1,58 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+LAYOUT_TOP_DOWN()
+title C4 Container — Флагман №1: приоритизация подозрительных операций
+
+Person(reviewer, "Сотрудник финмониторинга", "25 человек; разбирает очередь по процедуре ПОД/ФТ")
+Person_Ext(client, "Клиент", "Инициирует операции")
+System_Ext(abs, "АБС / транзакционный журнал", "Источник операций: сумма, назначение, контрагент, ОКВЭД, канал")
+System_Ext(kyc, "«Знай своего клиента»", "Внешний вспомогательный сигнал (недоверенный ответ)")
+System_Ext(analytics, "Аналитика / отчётность", "Потребитель только агрегатов")
+
+System_Boundary(bank, "Контур банка (ИС в РФ, 115-ФЗ, 152-ФЗ)") {
+
+  rectangle "№1 — вход недоверенного контента" as TB1 #line.dashed {
+    Container(ingest, "Ingestion Service", "Python/Go", "Валидация схемы, дедупликация, обогащение; санитайзинг текста назначения; whitelist полей")
+  }
+
+  Container(features, "Feature Service", "Feature store (online/offline)", "Признаки клиента, контрагента, истории, TF-IDF/эмбеддинги текста")
+  Container(scoring, "Scoring Service", "LightGBM/CatBoost, ONNX", "Скоринг и ранжирование, калибровка, reason codes")
+  Container(rules, "Rules & Guardrails", "Python/Java", "Детерминированные ПОД/ФТ-правила, пороги, конфликт-чекер, эскалация")
+  Container(prioritize, "Prioritization Service", "Python", "Ранжирование очереди, лимит K, запись в очередь")
+  ContainerDb(queue, "Case Management / Очередь финмониторинга", "Существующая система", "Очередь на разбор; процесс не меняется")
+
+  Container(sample, "Control Sample Service", "Python", "Вероятностная стратифицированная контрольная выборка")
+  Container(labeling, "Labeling / Annotation", "Веб-форма + гайдлайн", "Разметка экспертами, каппа Коэна, арбитраж")
+  Container(training, "Training Pipeline", "MLflow + on-prem GPU", "Обучение/переобучение, версионирование, реестр моделей")
+  Container(monitoring, "Monitoring", "Prometheus/Grafana + Evidently", "Вход, модель, очередь, бизнес-метрика")
+  Container(audit, "Audit Log", "WORM / неизменяемый лог", "Решения, версии моделей, признаки, разметка")
+
+  rectangle "№2 — выход из контура (только агрегаты)" as TB2 #line.dashed
+}
+
+Boundary(tb3, "№3 — внешний API «Знай своего клиента»") {
+  Container(kyc_adapter, "KYC Adapter", "Python", "Валидация ответа, таймауты, rate limit, fallback")
+}
+
+Rel(client, abs, "Операции", "HTTPS")
+Rel(abs, ingest, "operations.raw", "Kafka, mTLS")
+Rel(kyc, kyc_adapter, "Ответ API", "HTTPS + mTLS")
+Rel(kyc_adapter, features, "Вспомогательный сигнал", "внутренний")
+Rel(ingest, features, "Обогащённая операция")
+Rel(features, scoring, "Вектор признаков")
+Rel(scoring, rules, "Score + reason codes")
+Rel(rules, prioritize, "Ранг + флаги")
+Rel(prioritize, queue, "Приоритет")
+Rel(queue, reviewer, "Разбор")
+Rel(reviewer, audit, "Решение и фиксация")
+Rel(reviewer, labeling, "Разобранные кейсы (слабые метки)")
+Rel(sample, labeling, "Выборка (несмещённая)")
+Rel(labeling, training, "Разметка")
+Rel(training, scoring, "Новая версия модели")
+Rel(scoring, monitoring, "Метрики")
+Rel(queue, monitoring, "Глубина, время разбора")
+Rel(monitoring, training, "Триггер переобучения / откат")
+Rel(prioritize, analytics, "Агрегаты", "граница №2")
+Rel(kyc_adapter, monitoring, "Доступность внешнего сигнала")
+
+@enduml

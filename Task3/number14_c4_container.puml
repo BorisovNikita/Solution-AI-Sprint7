@@ -1,0 +1,40 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+LAYOUT_TOP_DOWN()
+title C4 Container — Инициатива №14: сверка комиссий по эквайрингу
+
+Person(auditor, "Аудитор / финансовый контроль", "Разбирает расхождения")
+System_Ext(contracts_src, "Хранилище договоров", "Договоры эквайринга (PDF/текст)")
+System_Ext(tx_src, "Транзакционная система", "Транзакции и начисления")
+System_Ext(billing, "Биллинг", "Принимает подтверждённые расхождения")
+
+System_Boundary(bank, "Контур банка") {
+  rectangle "№1 — вход недоверенного контента (договор от контрагента)" as TB1 #line.dashed {
+    Container(contract_ingest, "Contract Ingestion", "Python", "Приём договоров; проверка формата; антивирус")
+  }
+  Container(extract, "Contract Extraction Service", "ML (извлечение условий)", "Ставки, схема начисления, пункты договора, confidence")
+  Container(calc, "Commission Calculation Service", "Детерминированный", "Расчёт ожидаемой комиссии по условиям")
+  Container(discrepancy, "Discrepancy Detection", "Детерминированный + правила", "Сравнение с фактическим начислением; приоритизация")
+  ContainerDb(queue, "Discrepancy Queue", "Очередь расхождений", "Сумма, пункт договора, приоритет")
+  Container(audit, "Audit Log", "WORM", "Версии модели, расчёты, решения")
+  Container(monitoring, "Monitoring", "Prometheus/Grafana + Evidently", "Вход, модель, очередь, бизнес-метрика")
+  Container(labeling, "Labeling", "Веб-форма + гайдлайн", "Разметка расхождений аудитом")
+  Container(training, "Training Pipeline", "MLflow + on-prem GPU", "Обучение/переобучение")
+}
+
+Rel(contracts_src, contract_ingest, "Договоры")
+Rel(tx_src, calc, "Транзакции и начисления")
+Rel(contract_ingest, extract, "Текст договора")
+Rel(extract, calc, "Условия + confidence")
+Rel(calc, discrepancy, "Ожидаемая комиссия")
+Rel(discrepancy, queue, "Расхождения")
+Rel(queue, auditor, "Разбор")
+Rel(auditor, billing, "Подтверждённое расхождение")
+Rel(auditor, audit, "Решение")
+Rel(auditor, labeling, "Разметка")
+Rel(labeling, training, "Разметка")
+Rel(training, extract, "Новая версия модели")
+Rel(extract, monitoring, "Метрики")
+Rel(queue, monitoring, "Глубина, время")
+
+@enduml
