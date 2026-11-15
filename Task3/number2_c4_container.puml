@@ -1,0 +1,39 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+LAYOUT_TOP_DOWN()
+title C4 Container — Инициатива №2: оцифровка сканов кредитной заявки
+
+Person_Ext(client, "Клиент / кредитный процесс", "Загружает пакет документов")
+Person(underwriter, "Андеррайтер", "Проверяет исключения, принимает решение")
+System_Ext(credit, "Кредитная система", "Принимает предзаполненные поля")
+
+System_Boundary(bank, "Контур банка") {
+  rectangle "№1 — вход недоверенного контента (документы клиента)" as TB1 #line.dashed {
+    Container(ingest, "Document Ingestion", "Python", "Приём PDF/сканов/фото; проверка типа, размера, антивирус")
+  }
+  Container(ocr, "OCR Service", "Детерминированный OCR (Tesseract/ABBYY)", "Текст + bounding boxes")
+  Container(extract, "Classification & Extraction Service", "ML (layout-модель + извлечение полей)", "Тип документа, поля, confidence")
+  Container(validate, "Validation Service", "Детерминированный", "ИНН, суммы, даты, сверка с заявкой")
+  ContainerDb(exceptions, "Exception Queue", "Очередь исключений", "Поля с низкой уверенностью / противоречия")
+  Container(audit, "Audit Log", "WORM", "Версии модели, поля, решения")
+  Container(monitoring, "Monitoring", "Prometheus/Grafana + Evidently", "Вход, модель, очередь, бизнес-метрика")
+  Container(labeling, "Labeling", "Веб-форма + гайдлайн", "Двойная разметка, арбитраж")
+  Container(training, "Training Pipeline", "MLflow + on-prem GPU", "Обучение/переобучение")
+}
+
+Rel(client, ingest, "Пакет документов", "HTTPS")
+Rel(ingest, ocr, "Изображение/PDF")
+Rel(ocr, extract, "Текст + layout")
+Rel(extract, validate, "Поля + confidence")
+Rel(validate, exceptions, "Исключения")
+Rel(validate, credit, "Автозаполненные поля")
+Rel(exceptions, underwriter, "Разбор")
+Rel(underwriter, credit, "Подтверждение")
+Rel(underwriter, audit, "Решение")
+Rel(underwriter, labeling, "Разметка")
+Rel(labeling, training, "Разметка")
+Rel(training, extract, "Новая версия модели")
+Rel(extract, monitoring, "Метрики")
+Rel(exceptions, monitoring, "Глубина, время")
+
+@enduml
